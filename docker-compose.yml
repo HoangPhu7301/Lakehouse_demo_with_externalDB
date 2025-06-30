@@ -1,0 +1,157 @@
+services:
+  postgres:
+    image: postgres:latest
+    container_name: postgres
+    platform: linux/amd64
+    environment:
+      POSTGRES_DB: Lakehouse_demo
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 931943
+    ports:
+      - "55432:5432"
+    networks:
+      - lakehouse-db
+
+  metastore-db:
+    image: postgres:latest
+    container_name: metastore-db
+    platform: linux/amd64
+    environment:
+      POSTGRES_DB: lakehouse_demo
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./db-init:/docker-entrypoint-initdb.d
+    networks:
+      - lakehouse-db
+
+  hive-metastore:
+    image: apache/hive:3.1.3
+    container_name: hive-metastore
+    platform: linux/amd64
+    user: root
+    environment:
+      DB_HOST: metastore-db
+      DB_NAME: lakehouse_demo
+      DB_PORT: 5432
+      DB_TYPE: postgres
+      DB_USER: admin
+      DB_PASSWORD: password
+      DB_DRIVER: org.postgresql.Driver
+      HIVE_SITE_CONF_DIR: /opt/hive/conf
+      HADOOP_CONF_DIR: /opt/hive/conf
+      HADOOP_HOME: /opt/hadoop  
+      HADOOP_CLASSPATH: /opt/hadoop/share/hadoop/common/lib/*:/opt/hadoop/share/hadoop/common/* 
+    ports:
+      - "9083:9083"
+    depends_on:
+      - metastore-db
+    volumes:
+      - ./hive/conf:/opt/hive/conf
+      - ./hive/lib:/opt/hive/lib
+      - /Users/hoangphu/hadoop-3.3.5:/opt/hadoop
+      - ./hive/scripts/env/entrypoint.sh:/opt/hive/scripts/env/entrypoint.sh
+      - ./hive/scripts/metastore/upgrade/postgres/hive-schema-3.1.3.postgres.sql:/opt/hive/scripts/metastore/upgrade/postgres/hive-schema-3.1.3.postgres.sql
+    entrypoint: ["/opt/hive/scripts/env/entrypoint.sh"]
+    networks:
+      - lakehouse-db
+
+  trino:
+    image: trinodb/trino:443
+    container_name: trino
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./trino/catalog:/etc/trino/catalog
+      - ./trino/conf:/etc/trino/conf
+    depends_on:
+      - hive-metastore
+      - minio
+    networks:
+      - lakehouse-db
+
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: password
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    networks:
+      - lakehouse-db
+    
+  minio-init:
+    image: minio/mc
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+        sleep 5;
+        mc alias set myminio http://minio:9000 admin password;
+        mc mb -p myminio/lakehouse;
+        mc mb -p myminio/tmp;
+        mc mb -p myminio/carsalesdata;
+        mc anonymous set public myminio/lakehouse;
+      "
+    networks:
+      - lakehouse-db
+
+  spark:
+    image: bitnami/spark:3.4.1
+    container_name: spark
+    user: root
+    environment:
+      - SPARK_MODE=master
+      - HIVE_METASTORE_URI=thrift://hive-metastore:9083
+      - HADOOP_HOME=/opt/hadoop
+      - HIVE_SITE_CONF_DIR=/opt/hive/conf
+      - HADOOP_CONF_DIR=/opt/hive/conf  
+      - HADOOP_CLASSPATH=/opt/hadoop/share/hadoop/common/lib/*:/opt/hadoop/share/hadoop/common/* 
+    ports:
+      - "4040:4040"
+    volumes:
+      - ./spark:/spark
+      - /Users/hoangphu/hadoop-3.3.5:/opt/hadoop
+      - ./hive/lib/postgresql-42.7.3.jar:/opt/bitnami/spark/jars/postgresql-42.7.3.jar
+      - ./spark/conf/hive-site-spark.xml:/opt/spark/conf/hive-site-spark.xml
+    depends_on:
+      - hive-metastore
+    networks:
+      - lakehouse-db
+
+  superset:
+    build: 
+      context: ./superset
+    container_name: superset
+    ports:
+      - "8088:8088"
+    environment:
+      - SUPERSET_LOAD_EXAMPLES=no
+      - SUPERSET_SECRET_KEY=superset_secret
+    volumes:
+      - superset_home:/app/superset_home
+    depends_on:
+      - trino
+    networks:
+      - lakehouse-db
+    command: >
+      /bin/bash -c "
+      superset db upgrade &&
+      superset fab create-admin --username admin --firstname Superset --lastname Admin --email admin@superset.com --password admin &&
+      superset init &&
+      superset run -h 0.0.0.0 -p 8088"
+
+volumes:
+  minio-data:
+  superset_home:
+
+networks:
+  lakehouse-db:
+    driver: bridge
