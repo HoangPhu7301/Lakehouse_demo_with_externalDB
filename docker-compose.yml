@@ -104,27 +104,32 @@ services:
       - lakehouse-db
 
   spark:
-    image: bitnami/spark:3.4.1
+    image: apache/spark:3.4.1
     container_name: spark
     user: root
     environment:
       - SPARK_MODE=master
+      - SPARK_HOME=/opt/spark
+      - SPARK_CONF_DIR=/opt/spark/conf
       - HIVE_METASTORE_URI=thrift://hive-metastore:9083
       - HADOOP_HOME=/opt/hadoop
-      - HIVE_SITE_CONF_DIR=/opt/hive/conf
-      - HADOOP_CONF_DIR=/opt/hive/conf  
-      - HADOOP_CLASSPATH=/opt/hadoop/share/hadoop/common/lib/*:/opt/hadoop/share/hadoop/common/* 
+      - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+      - HADOOP_CLASSPATH=/opt/hadoop/share/hadoop/common/lib/*:/opt/hadoop/share/hadoop/common/*:/opt/hadoop/share/hadoop/hdfs/lib/*:/opt/hadoop/share/hadoop/hdfs/*:/opt/hadoop/share/hadoop/mapreduce/lib/*:/opt/hadoop/share/hadoop/mapreduce/*
     ports:
       - "4040:4040"
+      - "7077:7077"
+      - "8082:8081"
     volumes:
       - ./spark:/spark
       - /Users/hoangphu/hadoop-3.3.5:/opt/hadoop
-      - ./hive/lib/postgresql-42.7.3.jar:/opt/bitnami/spark/jars/postgresql-42.7.3.jar
+      - ./hive/lib/postgresql-42.7.3.jar:/opt/spark/jars/postgresql-42.7.3.jar
       - ./spark/conf/hive-site-spark.xml:/opt/spark/conf/hive-site-spark.xml
+      - ./spark/conf/log4j2.properties:/opt/spark/conf/log4j2.properties
     depends_on:
       - hive-metastore
     networks:
       - lakehouse-db
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master --webui-port 8081
 
   superset:
     build: 
@@ -147,6 +152,25 @@ services:
       superset fab create-admin --username admin --firstname Superset --lastname Admin --email admin@superset.com --password admin &&
       superset init &&
       superset run -h 0.0.0.0 -p 8088"
+  airflow:
+    image: apache/airflow:2.9.3
+    container_name: airflow
+    user: "50000:0"
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=SequentialExecutor
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+    depends_on:
+      - spark
+      - trino
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+    ports:
+      - "8081:8080"
+    networks:
+      - lakehouse-db
+    command: ["standalone"]
 
 volumes:
   minio-data:
