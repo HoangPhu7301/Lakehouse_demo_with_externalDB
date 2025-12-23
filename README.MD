@@ -8,27 +8,36 @@
 - MinIO
 - Apache Superset (for visualization)
 
-## Condition to run
-1. **Apache Hive 3.1.3**
-   wget https://archive.apache.org/dist/hive/hive-3.1.3/apache-hive-3.1.3-bin.tar.gz
-   tar -xzf apache-hive-3.1.3-bin.tar.gz
+## ⚙️ Prerequisites
 
-  copy needed file in lib folder to hive/lib to run 
-2. **Hadoop 3.3.4**
-    wget https://archive.apache.org/dist/hadoop/common/hadoop-3.3.4/hadoop-3.3.4.tar.gz
-    tar -xzf hadoop-3.3.5.tar.gz
+### 1. Apache Hive 3.1.3
+```bash
+wget https://archive.apache.org/dist/hive/hive-3.1.3/apache-hive-3.1.3-bin.tar.gz
+tar -xzf apache-hive-3.1.3-bin.tar.gz
+```
+- Copy required JAR files from `lib` folder to `hive/lib`
 
-    make sure to allow the script after decompress it and allow system in your system
-3. **External DB**
-    In this project, I create a DB in pgadmin4 tool using postgreSQL, and name it Lakehouse_demo(you can name it what ever you want)
-    create two tables name: car_sales and car_sales_updated, then using JDBC to connect to postgres and get data from it. 
-    You can do the same with any data you got from postgres 
+### 2. Hadoop 3.3.4
+```bash
+wget https://archive.apache.org/dist/hadoop/common/hadoop-3.3.4/hadoop-3.3.4.tar.gz
+tar -xzf hadoop-3.3.4.tar.gz
+```
+- Make scripts executable after extraction
+- Configure system permissions as needed
+
+### 3. PostgreSQL Database Setup
+- Create a database named `lakehouse_demo` (or your preferred name) using pgAdmin4
+- Create two tables:
+  - `car_sales`
+  - `car_sales_updated`
+- Use JDBC to connect Spark to PostgreSQL and ingest data
+
 ## 🛠️ How to run
-
 ```bash
 #Start the docker container
 docker compose up -d
-#Run Spark ETL script
+
+#Run Spark ETL Pipeline
 docker exec -it spark /opt/spark/bin/spark-submit \
   --packages org.apache.hudi:hudi-spark3.4-bundle_2.12:0.14.1,org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262 \
   --driver-class-path /opt/spark/jars/postgresql-42.7.3.jar \
